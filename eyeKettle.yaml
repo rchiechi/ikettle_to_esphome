@@ -2,7 +2,7 @@ esphome:
   name: "eyekettle"
   friendly_name: "eyeKettle S2"
   includes:
-    - kettle_logic.h
+    - kettle_logic.h # Make sure to put this file in the same dir as the yaml
   on_boot:
     priority: -10
     then:
