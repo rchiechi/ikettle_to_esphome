@@ -10,7 +10,7 @@ I have a Smarter iKettle v3 and I really like the features and aesthetics, but s
 - Jumper wires
 
 # iKettle Innards
-
+- Layout: the kettle uses an Electric Imp controller to read a strain gauge, NTC thermsistor and toggle a relay switch for heating. The [circuit diagram](https://fccid.io/2AKC5-SMKET01/Schematics/Circuit-Diagram-3267208.pdf) shows a 10 kOhm resistor across the NTC, but I measured mine to be 50 kOhm.
 - Main board: this is the longer of the two PCBs. It houses the Electric Imp chip, strain sensor amplifier, WiFi, physical button and LEDs.
 - Daughter board: this is the smaller of the two PCBs. It houses the AC/DC transformer for 5V power and the relay to connect mains power to the kettle base. The two boards are connected by three white wires. The outer wires are 5V DC power and the Heater Relay, the middle is GND. If you unscrew the daughter board and flip it over you can see the three pins from the wires, which I've labeled in the picture below. Make sure you correctly map them to the connector pins on the top of the board.
 ![Bottom of Daughter Board|690x285](images/IMG_0435_stripped.jpg)
