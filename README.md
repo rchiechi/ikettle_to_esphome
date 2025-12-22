@@ -1,5 +1,7 @@
 I have a Smarter iKettle v3 and I really like the features and aesthetics, but since they stopped paying the bills Electric Imp has soft-bricked the kettles by blocking them from accessing their cloud infrastructure. Below is a description of how I replaced the Electric Imp controller with an ESP32 board. I wired everything by jamming the pins of jumper wires into the existing connectors, so it is completely non-destructive and reversible sans four small solder points.
 
+> Disclaimer: This project involves mains electricity (120V/240V). Modifying heating appliances carries risks of fire or electrocution. This software includes safety watchdogs, but use this code and hardware modification entirely at your own risk.
+
 # Parts Used:
 
 - [Adafruit ESP32-S2 Feather](https://learn.adafruit.com/adafruit-esp32-s2-feather) You can use any ESP32 you like, but this one is high quality and fits neatly in the base.
@@ -25,7 +27,7 @@ I have a Smarter iKettle v3 and I really like the features and aesthetics, but s
 
 - Disconnect the plug from the main board, leaving the other end plugged into the daughter. The free end of the connector has three female pins: insert a jumper wire into the center pin and connect it the common ground and the GND terminal on the Feather. I just soldered a bunch of pins together and tied all the ground wires together.
 - Figure out which pin is the Heater Relay and which is the 5V. **Warning** It is super important not to mix them up because you can fry the Feather by putting 5V on the GPIO pin.
-- Connect the 5V pin to the USB pin on the Feather (this is called different things on different boards, but it is the input voltage that powers the whole board).
+- Connect the 5V pin to the USB (or VBUS) pin on the Feather (this is called different things on different boards, but it is the input voltage that powers the whole board). **Do not** connect it to the 3V pin.
 - Connect the Heater Relay to GPIO12. **Note:** the relay Heater Relay pin takes 3.3V even though the relay is a 5V switch; the daughter board uses a MOSFET to pull the relay to 5V.
 - To be clear: the GND, 5V and GPIO12 pins terminate on the daughter board, via the white wire; we are effectively replacing the entire main board with the Feather.
 - Disconnect the NTC connector from the main board. (In the picture above, you see the male pins on the main board after the connector is removed.) The free end of the connector has two female pins: Connect the red wire to GPIO A5 and the black wire to GND. (It actually doesn't matter which is which.) It is essential that you use a pin on [ADC1](https://cdn-learn.adafruit.com/assets/assets/000/110/677/original/adafruit_products_Adafruit_Feather_ESP32-S2_Pinout.png?1649709383) because ADC2 is used by WiFi.
