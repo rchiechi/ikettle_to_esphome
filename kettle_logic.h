@@ -3,148 +3,159 @@
 
 class KettleLogic {
   private:
-    // State Tracking
+    // Internal State
     unsigned long hold_start_time = 0;
     float last_temp = 0.0;
-    int last_led_mode = -1;
-    bool error_detected = false;
+    
+    // We only track this to prevent the "Slow Blink" effect 
+    // from resetting its timer every 1s (which makes it look jittery).
+    int last_led_mode = -1; 
 
-    // Constants
     const float HYST = 2.0;
     const float MAX_TEMP = 108.0;
-    const float DRY_BOIL_RATE = 8.0;
-
-    void set_led(int mode) {
-      if (mode == last_led_mode) return;
-      
-      auto call = id(kettle_led).turn_on();
-      if (mode == 0) {
-        id(kettle_led).turn_off();
-      } else {
-        if (mode == 1) call.set_effect("Fast Blink");
-        else if (mode == 2) call.set_effect("None"); // Solid
-        else if (mode == 3) call.set_effect("Slow Blink");
-        call.perform();
-      }
-      last_led_mode = mode;
-    }
 
   public:
     void loop() {
+      // ----------------------------------------------------------
       // 1. GATHER INPUTS
+      // ----------------------------------------------------------
       bool active = id(kettle_active).state;
       float current = id(water_temp).state;
       float target = id(target_temp).state;
       float keep_warm = id(keep_warm_mins).state;
-      int target_led_mode = 0;
 
-      // NAN Guard
+      // NAN Guard (skip if sensor isn't ready)
       if (isnan(current)) return;
 
-      // Rate Calculation
+      // Rate Calc
       float rate = 0.0;
       if (last_temp > 1.0) rate = current - last_temp;
       last_temp = current;
 
-      // 2. SAFETY CHECKS
-      error_detected = false;
-      
-      // Sensor missing
+      // ----------------------------------------------------------
+      // 2. SAFETY CHECKS (Updates Fault Status)
+      // ----------------------------------------------------------
+      bool error = false;
+
       if (current < 1.0) {
-        if (active || id(relay_hardware).state) {
-          trigger_safety_shutdown("Error: Kettle Missing");
-        }
-        error_detected = true;
+        shutdown("Error: Kettle Missing");
+        error = true;
+      } 
+      else if (active && rate > 8.0) {
+        shutdown("Error: Dry Boil");
+        error = true;
       }
-      // Dry Boil
-      else if (active && rate > DRY_BOIL_RATE) {
-        ESP_LOGE("safety", "Dry Boil! Rate: %.2f", rate);
-        trigger_safety_shutdown("Error: Dry Boil");
-        error_detected = true;
-      }
-      // Overheat
       else if (current > MAX_TEMP) {
-        trigger_safety_shutdown("Error: Overheat");
-        error_detected = true;
+        shutdown("Error: Overheat");
+        error = true;
       }
 
-      // 3. DECISION LOGIC
-      if (error_detected) {
-        target_led_mode = 1; // Fast Blink
-        reset_ui_flags();
-      } 
-      else if (!active) {
-        process_idle_state();
-        target_led_mode = 0;
-      } 
-      else {
-        target_led_mode = process_active_state(current, target, keep_warm);
+      // ----------------------------------------------------------
+      // 3. THERMOSTAT LOGIC (Updates Binary Sensors & Relay)
+      // ----------------------------------------------------------
+      if (!error) {
+        if (!active) {
+          // USER TURNED OFF
+          if (id(relay_hardware).state) id(relay_hardware).turn_off();
+          hold_start_time = 0;
+          
+          // Force sensors off immediately so LED logic picks it up below
+          if (id(boiling_status).state) id(boiling_status).publish_state(false);
+          if (id(keeping_warm_status).state) id(keeping_warm_status).publish_state(false);
+        }
+        else {
+          // USER TURNED ON
+          if (hold_start_time == 0) {
+            // PHASE 1: HEATING
+            if (!id(boiling_status).state) id(boiling_status).publish_state(true);
+            if (id(keeping_warm_status).state) id(keeping_warm_status).publish_state(false);
+
+            if (current < target) {
+              if (current < (target - HYST) && !id(relay_hardware).state) {
+                 id(relay_hardware).turn_on();
+                 id(fault_status).publish_state("Heating");
+              }
+            } else {
+              id(relay_hardware).turn_off();
+              hold_start_time = millis(); // Mark the transition
+              id(fault_status).publish_state("Target Reached");
+            }
+          }
+          else {
+            // PHASE 2: KEEP WARM
+            unsigned long elapsed = millis() - hold_start_time;
+            unsigned long limit = keep_warm * 60 * 1000;
+
+            if (limit == 0 || elapsed > limit) {
+              // Time's up
+              id(kettle_active).turn_off();
+              id(fault_status).publish_state("Done");
+            } else {
+              // Maintain
+              if (id(boiling_status).state) id(boiling_status).publish_state(false);
+              if (!id(keeping_warm_status).state) id(keeping_warm_status).publish_state(true);
+              
+              id(fault_status).publish_state("Keeping Warm");
+              if (current < (target - HYST) && !id(relay_hardware).state) id(relay_hardware).turn_on();
+              else if (current >= target && id(relay_hardware).state) id(relay_hardware).turn_off();
+            }
+          }
+        }
       }
 
-      // 4. OUTPUTS
-      set_led(target_led_mode);
+      // ----------------------------------------------------------
+      // 4. LED LOGIC
+      // ----------------------------------------------------------
+      int led_mode = 0; // Default Off
+
+      // Check 1: Error?
+      if (error) {
+        led_mode = 1; // Fast Blink
+      }
+      // Check 2: Boiling?
+      else if (id(boiling_status).state) {
+        led_mode = 2; // Solid
+      }
+      // Check 3: Keeping Warm?
+      else if (id(keeping_warm_status).state) {
+        led_mode = 3; // Slow Pulse
+      }
+      // Else: Off (led_mode remains 0)
+
+      update_led(led_mode);
     }
 
-    // Helpers
-    void trigger_safety_shutdown(const char* msg) {
+  private:
+    void shutdown(const char* msg) {
       id(relay_hardware).turn_off();
       id(kettle_active).turn_off();
       id(fault_status).publish_state(msg);
-      hold_start_time = 0;
-    }
-
-    void reset_ui_flags() {
+      // Clear binary sensors so LED turns off/blinks error correctly
       id(boiling_status).publish_state(false);
       id(keeping_warm_status).publish_state(false);
     }
 
-    void process_idle_state() {
-      if (id(relay_hardware).state) id(relay_hardware).turn_off();
-      hold_start_time = 0;
-      reset_ui_flags();
-    }
+    void update_led(int mode) {
+      if (mode == last_led_mode) return; // Prevent effect reset loop
 
-    int process_active_state(float current, float target, float keep_warm) {
-      // Mode A: Heating
-      if (hold_start_time == 0) {
-        if (!id(boiling_status).state) id(boiling_status).publish_state(true);
-        if (id(keeping_warm_status).state) id(keeping_warm_status).publish_state(false);
-        
-        if (current < target) {
-          if (current < (target - HYST) && !id(relay_hardware).state) {
-             id(relay_hardware).turn_on();
-             id(fault_status).publish_state("Heating");
-          }
-        } else {
-          id(relay_hardware).turn_off();
-          hold_start_time = millis();
-          id(fault_status).publish_state("Target Reached");
-        }
-        return 2; // Solid LED
-      }
-      // Mode B: Keep Warm
+      auto call = id(kettle_led).turn_on();
+      
+      if (mode == 0) {
+        call.set_state(false);
+        call.set_effect("None");
+        call.set_transition_length(0); // Snap Off
+      } 
       else {
-        unsigned long elapsed = millis() - hold_start_time;
-        unsigned long limit = keep_warm * 60 * 1000;
+        call.set_state(true);
+        call.set_brightness(1.0);
+        call.set_transition_length(0); // Snap On
         
-        if (limit == 0 || elapsed > limit) {
-          id(kettle_active).turn_off();
-          id(fault_status).publish_state("Done");
-          hold_start_time = 0;
-          return 0; // LED Off
-        } else {
-          if (id(boiling_status).state) id(boiling_status).publish_state(false);
-          if (!id(keeping_warm_status).state) id(keeping_warm_status).publish_state(true);
-          
-          id(fault_status).publish_state("Keeping Warm");
-          
-          // Simple Thermostat
-          if (current < (target - HYST) && !id(relay_hardware).state) id(relay_hardware).turn_on();
-          else if (current >= target && id(relay_hardware).state) id(relay_hardware).turn_off();
-          
-          return 3; // Slow Blink LED
-        }
+        if (mode == 1) call.set_effect("Fast Blink");
+        else if (mode == 2) call.set_effect("None");
+        else if (mode == 3) call.set_effect("Slow Blink");
       }
+      call.perform();
+      last_led_mode = mode;
     }
 };
 

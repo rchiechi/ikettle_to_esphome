@@ -64,28 +64,23 @@ substitutions:
 - The button presses are captured as actions like:
 ```yaml
 alias: Kettle button
-description: ""
-mode: single
-
-trigger:
-  - platform: event
-    event_type: esphome.kettle_button_event
+description: Handle physical button presses
+triggers:
+  - event_type: esphome.kettle_button_event
     id: single_press
     event_data:
       click_type: single
-  - platform: event
-    event_type: esphome.kettle_button_event
+    trigger: event
+  - event_type: esphome.kettle_button_event
     id: double_press
     event_data:
       click_type: double
-
+    trigger: event
 conditions:
   - condition: time
     after: "05:00:00"
     before: "20:00:00"
-
-action:
-  # 1. Determine the target temperature based on the click type
+actions:
   - variables:
       target_setpoint: |
         {% if trigger.id == 'single_press' %}
@@ -93,29 +88,47 @@ action:
         {% else %}
           85
         {% endif %}
-
-  # 2. Unified Toggle Logic
   - choose:
-      # A. If the Kettle is currently ON -> Turn it OFF
       - conditions:
           - condition: state
-            entity_id: switch.start_heating
-            state: "on"
+            entity_id: binary_sensor.eyekettle_boiling
+            state:
+              - "off"
         sequence:
-          - action: switch.turn_off
+          - action: number.set_value
             target:
-              entity_id: switch.start_heating
-              
-      # B. If the Kettle is OFF (Default) -> Set Temp & Turn ON
-      default:
-        - action: number.set_value
-          target:
-            entity_id: number.target_temperature
-          data:
-            value: "{{ target_setpoint }}"
-        - action: switch.turn_on
-          target:
-            entity_id: switch.start_heating
+              entity_id: number.target_temperature
+            data:
+              value: "{{ target_setpoint }}"
+          - action: switch.turn_on
+            target:
+              entity_id:
+                - switch.eyekettle_start_heating
+            data: {}
+          - action: tts.speak
+            metadata: {}
+            target:
+              entity_id: tts.piper
+            data:
+              cache: true
+              media_player_entity_id: media_player.dinguses
+              message: Kettle heating to {{ target_setpoint }} degrees Celsius
+    default:
+      - action: switch.turn_off
+        target:
+          entity_id:
+            - switch.eyekettle_start_heating
+        data: {}
+      - action: tts.speak
+        metadata: {}
+        target:
+          entity_id: tts.piper
+        data:
+          cache: true
+          media_player_entity_id: media_player.dinguses
+          message: Turned off the kettle
+mode: single
+
 ```
 - The rest of the switches and sensors are exposed in HA
 
