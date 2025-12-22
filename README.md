@@ -485,22 +485,26 @@ interval:
 alias: Kettle button
 description: ""
 mode: single
-triggers:
-  - event_type: esphome.kettle_button_event
+
+trigger:
+  - platform: event
+    event_type: esphome.kettle_button_event
     id: single_press
     event_data:
       click_type: single
-    trigger: event
-  - event_type: esphome.kettle_button_event
+  - platform: event
+    event_type: esphome.kettle_button_event
     id: double_press
     event_data:
       click_type: double
-    trigger: event
+
 conditions:
   - condition: time
     after: "05:00:00"
     before: "20:00:00"
+
 action:
+  # 1. Determine the target temperature based on the click type
   - variables:
       target_setpoint: |
         {% if trigger.id == 'single_press' %}
@@ -508,54 +512,30 @@ action:
         {% else %}
           85
         {% endif %}
-      action_mode: |
-        {% if trigger.id == 'single_press' %}
-          toggle
-        {% else %}
-          force_off
-        {% endif %}
-  
+
+  # 2. Unified Toggle Logic
+  # (Applies to BOTH Single and Double clicks now)
   - choose:
-      # LOGIC A: Toggle (Single Click)
+      # A. If the Kettle is currently ON -> Turn it OFF
       - conditions:
-          - condition: template
-            value_template: "{{ action_mode == 'toggle' }}"
+          - condition: state
+            entity_id: switch.start_heating
+            state: "on"
         sequence:
-          - choose:
-              # If ON -> Turn OFF
-              - conditions:
-                  - condition: state
-                    entity_id: switch.start_heating
-                    state: "on"
-                sequence:
-                  - action: switch.turn_off
-                    target:
-                      entity_id: switch.start_heating
-            # If OFF -> Set Temp & Turn ON
-            default:
-              - action: number.set_value
-                target:
-                  entity_id: number.target_temperature
-                data:
-                  value: "{{ target_setpoint }}"
-              - action: switch.turn_on
-                target:
-                  entity_id: switch.start_heating
-      
-      # LOGIC B: Force Off (Double Click)
-      - conditions:
-          - condition: template
-            value_template: "{{ action_mode == 'force_off' }}"
-        sequence:
-          # Sets temp to 85, then turns OFF.
-          - action: number.set_value
-            target:
-              entity_id: number.target_temperature
-            data:
-              value: "{{ target_setpoint }}"
           - action: switch.turn_off
             target:
               entity_id: switch.start_heating
+              
+      # B. If the Kettle is OFF (Default) -> Set Temp & Turn ON
+      default:
+        - action: number.set_value
+          target:
+            entity_id: number.target_temperature
+          data:
+            value: "{{ target_setpoint }}"
+        - action: switch.turn_on
+          target:
+            entity_id: switch.start_heating
 ```
 - The rest of the switches and sensors are exposed in HA
 
