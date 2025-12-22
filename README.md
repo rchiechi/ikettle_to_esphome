@@ -24,7 +24,7 @@ I have a Smarter iKettle v3 and I really like the features and aesthetics, but s
 # Connections
 
 - Disconnect the plug from the main board, leaving the other end plugged into the daughter. The free end of the connector has three female pins: insert a jumper wire into the center pin and connect it the common ground and the GND terminal on the Feather. I just soldered a bunch of pins together and tied all the ground wires together.
-- Figure out which pin is the Heater Relay and which is the 5V. > **Warning** It is super important not to mix them up because you can fry the Feather by putting 5V on the GPIO pin.
+- Figure out which pin is the Heater Relay and which is the 5V. **Warning** It is super important not to mix them up because you can fry the Feather by putting 5V on the GPIO pin.
 - Connect the 5V pin to the USB pin on the Feather (this is called different things on different boards, but it is the input voltage that powers the whole board).
 - Connect the Heater Relay to GPIO12. **Note:** the relay Heater Relay pin takes 3.3V even though the relay is a 5V switch; the daughter board uses a MOSFET to pull the relay to 5V.
 - To be clear: the GND, 5V and GPIO12 pins terminate on the daughter board, via the white wire; we are effectively replacing the entire main board with the Feather.
