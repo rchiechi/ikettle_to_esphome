@@ -1,13 +1,15 @@
 esphome:
   name: "eyekettle"
   friendly_name: "eyeKettle S2"
+  includes:
+    - kettle_logic.h
   on_boot:
     priority: -10
     then:
       - text_sensor.template.publish:
           id: fault_status
           state: "OK"
-
+    
 esp32:
   #board: adafruit_feather_esp32s2
   board: esp32-s2-saola-1
@@ -247,148 +249,4 @@ number:
 interval:
   - interval: 1s
     then:
-      - lambda: |-
-          // ----------------------------------------
-          // 1. INITIALIZE STATE & VARIABLES
-          // ----------------------------------------
-          static unsigned long hold_start_time = 0;
-          static float last_temp = 0.0;
-          
-          // LED State Tracking (Moved to top so it persists correctly)
-          static int last_led_mode = -1; // -1:Init, 0:Off, 1:Fast, 2:Solid, 3:Slow
-          int target_led_mode = 0;       // Default to Off
-          
-          bool active = id(kettle_active).state;
-          float current = id(water_temp).state;
-          float target = id(target_temp).state;
-          float keep_warm = id(keep_warm_mins).state;
-          float hyst = 2.0;
-          bool error_detected = false;
-
-          // Rate Calculation
-          float rate = 0.0;
-          if (last_temp > 1.0) { rate = current - last_temp; }
-          last_temp = current;
-
-          // ----------------------------------------
-          // 2. SAFETY CHECKS (High Priority)
-          // ----------------------------------------
-          
-          // A. SENSOR FAILURE
-          if (isnan(current) || current < 10.0) {
-            if (active || id(relay_hardware).state) {
-              id(relay_hardware).turn_off();
-              id(kettle_active).turn_off(); 
-              id(fault_status).publish_state("Error: Kettle Missing");
-              hold_start_time = 0;
-            }
-            error_detected = true;
-          }
-          // B. DRY BOIL (Rate > 8.0 C/s)
-          else if (active && rate > 8.0) {
-             ESP_LOGE("safety", "Dry Boil Detected! Rate: %.2f", rate);
-             id(relay_hardware).turn_off();
-             id(kettle_active).turn_off(); 
-             id(fault_status).publish_state("Error: Dry Boil");
-             error_detected = true;
-          }
-          // C. OVERHEAT (> 108 C)
-          else if (current > 108.0) {
-            id(relay_hardware).turn_off();
-            id(kettle_active).turn_off();
-            id(fault_status).publish_state("Error: Overheat");
-            error_detected = true;
-          }
-
-          // If Error Detected: Force Fast Blink and SKIP thermostat logic
-          if (error_detected) {
-             target_led_mode = 1; // Fast Blink
-             
-             // Ensure logic flags are cleared
-             id(boiling_status).publish_state(false);
-             id(keeping_warm_status).publish_state(false);
-          }
-          
-          // ----------------------------------------
-          // 3. THERMOSTAT LOGIC (Only runs if no error)
-          // ----------------------------------------
-          else {
-             
-             // CASE: SYSTEM OFF
-             if (!active) {
-                if (id(relay_hardware).state) id(relay_hardware).turn_off();
-                hold_start_time = 0;
-                
-                id(boiling_status).publish_state(false);
-                id(keeping_warm_status).publish_state(false);
-                
-                target_led_mode = 0; // Force Off
-             }
-             
-             // CASE: SYSTEM ON
-             else {
-                // MODE A: HEATING UP
-                if (hold_start_time == 0) {
-                   id(boiling_status).publish_state(true);
-                   id(keeping_warm_status).publish_state(false);
-                   target_led_mode = 2; // Solid On
-
-                   if (current < target) {
-                      if (current < (target - hyst) && !id(relay_hardware).state) {
-                         id(relay_hardware).turn_on();
-                         id(fault_status).publish_state("Heating");
-                      }
-                   } 
-                   else {
-                      // Target Reached
-                      id(relay_hardware).turn_off();
-                      hold_start_time = millis();
-                      id(fault_status).publish_state("Target Reached");
-                   }
-                }
-                // MODE B: KEEP WARM
-                else {
-                   unsigned long elapsed_ms = millis() - hold_start_time;
-                   unsigned long limit_ms = keep_warm * 60 * 1000;
-
-                   if (limit_ms == 0 || elapsed_ms > limit_ms) {
-                      // Timer Done -> Turn Everything Off
-                      id(kettle_active).turn_off();
-                      id(fault_status).publish_state("Done");
-                      hold_start_time = 0;
-                      target_led_mode = 0; // Off
-                   } 
-                   else {
-                      // Active Keep Warm
-                      id(boiling_status).publish_state(false);
-                      id(keeping_warm_status).publish_state(true);
-                      target_led_mode = 3; // Slow Blink
-
-                      id(fault_status).publish_state("Keeping Warm");
-                      if (current < (target - hyst)) {
-                         if (!id(relay_hardware).state) id(relay_hardware).turn_on();
-                      }
-                      else if (current >= target) {
-                         if (id(relay_hardware).state) id(relay_hardware).turn_off();
-                      }
-                   }
-                }
-             }
-          }
-
-          // ----------------------------------------
-          // 4. LED UPDATE (Runs every single time)
-          // ----------------------------------------
-          if (target_led_mode != last_led_mode) {
-              if (target_led_mode == 0) {
-                  id(kettle_led).turn_off();
-              }
-              else {
-                  auto call = id(kettle_led).turn_on();
-                  if (target_led_mode == 1) call.set_effect("Fast Blink");
-                  if (target_led_mode == 2) call.set_effect("None"); 
-                  if (target_led_mode == 3) call.set_effect("Slow Blink");
-                  call.perform();
-              }
-              last_led_mode = target_led_mode;
-          }
+      - lambda: 'kettle_logic.loop();'
