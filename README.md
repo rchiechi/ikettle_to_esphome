@@ -40,8 +40,7 @@ I have a Smarter iKettle v3 and I really like the features and aesthetics, but s
 
 - If you use an ESP32-S2 Feather wired the way I have it pictured, you only have to update the encryption key and wifi credentials
 - If you use a different board, you can define the pins in the "Configuration Variables" section
-```
-yaml
+```yaml
 esphome:
   name: "ikettle"
   friendly_name: "iKettle S2"
@@ -482,8 +481,7 @@ interval:
 
 - I wrote this to support the things that I use, which is mainly heating to 85 °C or 100 °C depending on if I'm making tea or the kids are making ramen. You can use the exposed HA controls to script it however you like.
 - The button presses are captured as actions like:
-```
-yaml
+```yaml
 alias: Kettle button
 description: ""
 mode: single
