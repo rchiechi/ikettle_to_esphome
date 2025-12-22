@@ -514,7 +514,6 @@ action:
         {% endif %}
 
   # 2. Unified Toggle Logic
-  # (Applies to BOTH Single and Double clicks now)
   - choose:
       # A. If the Kettle is currently ON -> Turn it OFF
       - conditions:
