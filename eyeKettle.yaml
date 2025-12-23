@@ -90,7 +90,7 @@ text_sensor:
 # SENSORS (ADC & NTC)
 # ----------------------------------------------------------------
 sensor:
-  # RAW SENSOR (Physics Engine Input)
+  # RAW SENSOR (For internal calculations)
   # - Must have ID 'water_temp' because C++ uses it.
   # - Must be INTERNAL to avoid spamming HA database.
   # - Must NOT have 'delta' filter, or rate calculation breaks.
