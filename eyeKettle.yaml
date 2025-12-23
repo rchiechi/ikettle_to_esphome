@@ -4,11 +4,31 @@ esphome:
   includes:
     - kettle_logic.h # Make sure to put this file in the same dir as the yaml
   on_boot:
-    priority: -10
-    then:
-      - text_sensor.template.publish:
-          id: fault_status
-          state: "OK"
+    # Action 1: High Priority (Runs first)
+    - priority: 600
+      then:
+        # 1. Initialize Binary Sensors
+        - binary_sensor.template.publish:
+            id: boiling_status
+            state: OFF
+        - binary_sensor.template.publish:
+            id: keeping_warm_status
+            state: OFF
+        - binary_sensor.template.publish:
+            id: kettle_present
+            state: ON 
+
+        # 2. Set Text to "Booting"
+        - text_sensor.template.publish:
+            id: fault_status
+            state: "Booting..."
+
+    # Action 2: Low Priority (Runs last, just before the main loop starts)
+    - priority: -10
+      then:
+        - text_sensor.template.publish:
+            id: fault_status
+            state: "Idle"
     
 esp32:
   #board: adafruit_feather_esp32s2
