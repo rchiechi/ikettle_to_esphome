@@ -19,7 +19,7 @@ class KettleLogic {
     
     // Constants
     const float HYST = 3.0;
-    const float THERMAL_LAG = 3.0;
+    const float THERMAL_LAG = 5.0;
     const float MAX_TEMP = 108.0;
     const float MIN_TEMP = 1.0;
     const float MAX_RATE = 5.0;
