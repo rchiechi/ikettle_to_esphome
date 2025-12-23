@@ -37,7 +37,7 @@ class KettleLogic {
 
     void set_heater(bool on){
       if (on && has_kettle) {
-        if !id(relay_hardware).state) id(relay_hardware).turn_on();
+        if (!id(relay_hardware).state) id(relay_hardware).turn_on();
       }
       else {
         id(relay_hardware).turn_off();
@@ -218,7 +218,7 @@ class KettleLogic {
       else if (state != STATE_ERROR) {
         if (hold_start_time == 0) {
           if (!has_kettle) state = STATE_NOKETTLE;
-          else if (current < (target - HYST) {
+          else if (current < (target - HYST)) {
             state = STATE_BOILING;
             set_heater(true);
           }
