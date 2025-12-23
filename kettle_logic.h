@@ -7,155 +7,242 @@ class KettleLogic {
     unsigned long hold_start_time = 0;
     float last_temp = 0.0;
     
-    // We only track this to prevent the "Slow Blink" effect 
-    // from resetting its timer every 1s (which makes it look jittery).
-    int last_led_mode = -1; 
-
+    // Pulse State Tracker (flips every second for breathing effect)
+    bool pulse_up = true;
+    
+    // Track kettle presence
+    bool kettle_present = false;
+    
+    // Constants
+    const int LOOP_DURATION = 1000; // Loop duration in ms
     const float HYST = 2.0;
     const float MAX_TEMP = 108.0;
+    const float MIN_TEMP = 1.0;
+    const float MAX_RATE = 8.0;
+    
+    // States
+    const int OFF = 0;
+    const int ERROR = 1;
+    const int BOILING = 2;
+    const int WARMING = 3;
+    const int NOKETTLE = 4;
+    const int DONE = 5;
 
+    // ----------------------------------------------------------------
+    // HARDWARE HELPERS (Must be defined first)
+    // ----------------------------------------------------------------
+
+    // Final safety gate for the relay
+    void set_heater(bool on){
+      if (on && kettle_present) {
+        id(relay_hardware).turn_on();
+      }
+      else {
+        id(relay_hardware).turn_off();
+      }
+    }
+
+    void set_led(int state){
+      auto call = id(kettle_led).turn_on();
+      call.set_state(true);    // Default to ON
+
+      if (state == OFF || state == DONE) {
+        call.set_state(false);
+        call.set_transition_length(0); 
+      }
+      else if (state == ERROR || state == NOKETTLE) {
+        call.set_brightness(pulse_up ? 1.0 : 0.0);
+        call.set_transition_length(0); 
+      }
+      else if (state == BOILING) {
+        call.set_brightness(1.0);
+        call.set_transition_length(LOOP_DURATION); 
+      }
+      else if (state == WARMING) {
+        call.set_brightness(pulse_up ? 1.0 : 0.2);
+        call.set_transition_length(LOOP_DURATION);
+      }
+      call.perform();
+      pulse_up = !pulse_up;
+    }
+
+    // ----------------------------------------------------------------
+    // UI & STATE SYNCHRONIZATION
+    // ----------------------------------------------------------------
+    void sync_ui(int state){
+        switch (state) {
+          case OFF:
+            if (id(boiling_status).state) id(boiling_status).publish_state(false);
+            if (id(keeping_warm_status).state) id(keeping_warm_status).publish_state(false);
+            if (!id(kettle_present).state) id(kettle_present).publish_state(true);
+            
+            // Side Effect: Ensure Switch is OFF
+            if (id(kettle_active).state) id(kettle_active).turn_off();
+            
+            id(fault_status).publish_state("Idle");
+            break;
+
+          case BOILING:
+            if (!id(boiling_status).state) id(boiling_status).publish_state(true);
+            if (id(keeping_warm_status).state) id(keeping_warm_status).publish_state(false);
+            if (!id(kettle_present).state) id(kettle_present).publish_state(true);
+            id(fault_status).publish_state("Boiling");
+            break;
+
+          case WARMING:
+            if (id(boiling_status).state) id(boiling_status).publish_state(false);
+            if (!id(keeping_warm_status).state) id(keeping_warm_status).publish_state(true);
+            if (!id(kettle_present).state) id(kettle_present).publish_state(true);
+            id(fault_status).publish_state("Keeping Warm");
+            break;
+
+          case DONE:
+            if (id(boiling_status).state) id(boiling_status).publish_state(false);
+            if (id(keeping_warm_status).state) id(keeping_warm_status).publish_state(false);
+            if (!id(kettle_present).state) id(kettle_present).publish_state(true);
+            
+            // Side Effect: Ensure Switch is OFF
+            if (id(kettle_active).state) id(kettle_active).turn_off();
+            
+            id(fault_status).publish_state("Target Reached");
+            break;
+
+          case NOKETTLE:
+            set_heater(false); // Redundant safety
+            if (id(boiling_status).state) id(boiling_status).publish_state(false);
+            if (id(keeping_warm_status).state) id(keeping_warm_status).publish_state(false);
+            if (id(kettle_present).state) id(kettle_present).publish_state(false);
+            
+            // Side Effect: Ensure Switch is OFF (Abort logic)
+            if (id(kettle_active).state) id(kettle_active).turn_off();
+            
+            id(fault_status).publish_state("Kettle Missing");
+            break;
+
+          case ERROR:
+            if (id(boiling_status).state) id(boiling_status).publish_state(false);
+            if (id(keeping_warm_status).state) id(keeping_warm_status).publish_state(false);
+            if (!id(kettle_present).state) id(kettle_present).publish_state(true);
+            
+            // Side Effect: Ensure Switch is OFF
+            if (id(kettle_active).state) id(kettle_active).turn_off();
+            
+            // Note: We do not publish generic "Error" text here so we don't 
+            // overwrite specific messages like "Dry Boil" set by the loop.
+            id(fault_status).publish_state("Error");
+            break;
+
+          default:
+            id(fault_status).publish_state("Internal error tracking state");
+            if (id(kettle_active).state) id(kettle_active).turn_off();
+            break;
+        }    
+    }
+
+    void shutdown(const char* msg) {
+      set_heater(false);
+      // Turn off active switch immediately
+      if (id(kettle_active).state) id(kettle_active).turn_off();
+      id(fault_status).publish_state(msg);
+    }
+    
   public:
     void loop() {
-      // ----------------------------------------------------------
       // 1. GATHER INPUTS
-      // ----------------------------------------------------------
       bool active = id(kettle_active).state;
       float current = id(water_temp).state;
       float target = id(target_temp).state;
       float keep_warm = id(keep_warm_mins).state;
+      
+      // NAN Guard (Fail Safe)
+      if (isnan(current)) {
+         set_heater(false);
+         return;
+      }
 
-      // NAN Guard (skip if sensor isn't ready)
-      if (isnan(current)) return;
-
-      // Rate Calc
+      // Rate Calculation
       float rate = 0.0;
       if (last_temp > 1.0) rate = current - last_temp;
       last_temp = current;
 
-      // ----------------------------------------------------------
-      // 2. SAFETY CHECKS (Updates Fault Status)
-      // ----------------------------------------------------------
-      bool error = false;
+      // 2. DETERMINE SYSTEM STATE
+      int state = OFF; 
 
-      if (current < 1.0) {
-        shutdown("Error: Kettle Missing");
-        error = true;
-      } 
-      else if (active && rate > 8.0) {
+      // --- Kettle presence ---
+      if (current < MIN_TEMP) {
+        kettle_present = false;
+        state = NOKETTLE;
+        set_heater(false); // Immediate safety
+      } else {
+        kettle_present = true;
+      }
+      
+      // --- Safety Checks ---
+      if (active && rate > MAX_RATE) {
+        state = ERROR;
         shutdown("Error: Dry Boil");
-        error = true;
       }
       else if (current > MAX_TEMP) {
+        state = ERROR;
         shutdown("Error: Overheat");
-        error = true;
       }
 
-      // ----------------------------------------------------------
-      // 3. THERMOSTAT LOGIC (Updates Binary Sensors & Relay)
-      // ----------------------------------------------------------
-      if (!error) {
-        if (!active) {
-          // USER TURNED OFF
-          if (id(relay_hardware).state) id(relay_hardware).turn_off();
-          hold_start_time = 0;
-          
-          // Force sensors off immediately so LED logic picks it up below
-          if (id(boiling_status).state) id(boiling_status).publish_state(false);
-          if (id(keeping_warm_status).state) id(keeping_warm_status).publish_state(false);
+      // 3. SET KETTLE STATE (Control Logic)
+
+      if (!active && state != ERROR) {
+        // IDLE
+        set_heater(false);
+        hold_start_time = 0;
+        // Keep NOKETTLE status if missing, otherwise OFF
+        if (state != NOKETTLE) state = OFF;
+      }
+      else if (state != ERROR) {
+        // ACTIVE
+        if (hold_start_time == 0) {
+          // --- HEATING ---
+          state = BOILING;
+
+          if (current < target && kettle_present) {
+             if (current < (target - HYST) && !id(relay_hardware).state) {
+                set_heater(true);
+             }
+          } 
+          else if (!kettle_present) {
+            state = NOKETTLE;
+            set_heater(false);
+          } 
+          else {
+             set_heater(false);
+             hold_start_time = millis();
+             state = DONE;
+          }
         }
         else {
-          // USER TURNED ON
-          if (hold_start_time == 0) {
-            // PHASE 1: HEATING
-            if (!id(boiling_status).state) id(boiling_status).publish_state(true);
-            if (id(keeping_warm_status).state) id(keeping_warm_status).publish_state(false);
+          // --- KEEP WARM ---
+          unsigned long elapsed = millis() - hold_start_time;
+          unsigned long limit = keep_warm * 60 * 1000;
 
-            if (current < target) {
-              if (current < (target - HYST) && !id(relay_hardware).state) {
-                 id(relay_hardware).turn_on();
-                 id(fault_status).publish_state("Heating");
-              }
-            } else {
-              id(relay_hardware).turn_off();
-              hold_start_time = millis(); // Mark the transition
-              id(fault_status).publish_state("Target Reached");
-            }
-          }
+          if (limit == 0 || elapsed > limit) {
+             // Timer Finished
+             state = OFF; // sync_ui will turn off kettle_active
+          } 
+          else if (kettle_present) {
+             // Maintaining
+             state = WARMING;
+             if (current < (target - HYST) && !id(relay_hardware).state) set_heater(true);
+             else if (current >= target && id(relay_hardware).state) set_heater(false);
+          } 
           else {
-            // PHASE 2: KEEP WARM
-            unsigned long elapsed = millis() - hold_start_time;
-            unsigned long limit = keep_warm * 60 * 1000;
-
-            if (limit == 0 || elapsed > limit) {
-              // Time's up
-              id(kettle_active).turn_off();
-              id(fault_status).publish_state("Done");
-            } else {
-              // Maintain
-              if (id(boiling_status).state) id(boiling_status).publish_state(false);
-              if (!id(keeping_warm_status).state) id(keeping_warm_status).publish_state(true);
-              
-              id(fault_status).publish_state("Keeping Warm");
-              if (current < (target - HYST) && !id(relay_hardware).state) id(relay_hardware).turn_on();
-              else if (current >= target && id(relay_hardware).state) id(relay_hardware).turn_off();
-            }
+             // Kettle removed during keep warm
+             state = NOKETTLE;
+             set_heater(false);
           }
         }
       }
 
-      // ----------------------------------------------------------
-      // 4. LED LOGIC
-      // ----------------------------------------------------------
-      int led_mode = 0; // Default Off
-
-      // Check 1: Error?
-      if (error) {
-        led_mode = 1; // Fast Blink
-      }
-      // Check 2: Boiling?
-      else if (id(boiling_status).state) {
-        led_mode = 2; // Solid
-      }
-      // Check 3: Keeping Warm?
-      else if (id(keeping_warm_status).state) {
-        led_mode = 3; // Slow Pulse
-      }
-      // Else: Off (led_mode remains 0)
-
-      update_led(led_mode);
-    }
-
-  private:
-    void shutdown(const char* msg) {
-      id(relay_hardware).turn_off();
-      id(kettle_active).turn_off();
-      id(fault_status).publish_state(msg);
-      // Clear binary sensors so LED turns off/blinks error correctly
-      id(boiling_status).publish_state(false);
-      id(keeping_warm_status).publish_state(false);
-    }
-
-    void update_led(int mode) {
-      if (mode == last_led_mode) return; // Prevent effect reset loop
-
-      auto call = id(kettle_led).turn_on();
-      
-      if (mode == 0) {
-        call.set_state(false);
-        call.set_effect("None");
-        call.set_transition_length(0); // Snap Off
-      } 
-      else {
-        call.set_state(true);
-        call.set_brightness(1.0);
-        call.set_transition_length(0); // Snap On
-        
-        if (mode == 1) call.set_effect("Fast Blink");
-        else if (mode == 2) call.set_effect("None");
-        else if (mode == 3) call.set_effect("Slow Blink");
-      }
-      call.perform();
-      last_led_mode = mode;
+      // 4. APPLY OUTPUTS
+      sync_ui(state);
+      set_led(state);
     }
 };
 

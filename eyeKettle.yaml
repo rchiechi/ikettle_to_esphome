@@ -103,22 +103,7 @@ light:
     name: "Kettle LED"
     output: led_gpio
     id: kettle_led
-    effects:
-      # Effect 1: "Breathing" for Keep Warm (Classy)
-      - pulse:
-          name: "Slow Blink"
-          update_interval: 2s      # One breath every 2 seconds
-          transition_length: 1s    # Smooth fade in/out
-          min_brightness: 0%
-          max_brightness: 100%
-
-      # Effect 2: "Machine Gun" Strobe for Errors (Urgent)
-      - pulse:
-          name: "Fast Blink"
-          update_interval: 0.2s    # 5 blinks per second
-          transition_length: 0s    # Instant ON/OFF (No fade)
-          min_brightness: 0%
-          max_brightness: 100%
+    internal: true # Hide from HA
 
 binary_sensor:
   - platform: gpio
@@ -162,6 +147,11 @@ binary_sensor:
     name: "Keep Warm"
     id: keeping_warm_status
     icon: "mdi:thermometer-check"
+
+  - platform: template
+    name: "Kettle Present"
+    id: kettle_present
+    icon: "mdi:kettle-alert-outline"
 
 # ----------------------------------------------------------------
 # HARDWARE SWITCH (Updated)
