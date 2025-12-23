@@ -81,10 +81,14 @@ text_sensor:
 # SENSORS (ADC & NTC)
 # ----------------------------------------------------------------
 sensor:
+  # 1. RAW SENSOR (Physics Engine Input)
+  # - Must have ID 'water_temp' because C++ uses it.
+  # - Must be INTERNAL to avoid spamming HA database.
+  # - Must NOT have 'delta' filter, or rate calculation breaks.
   - platform: ntc
     id: water_temp
-    name: "Water Temperature"
     sensor: resistance_sensor
+    internal: true 
     calibration:
       b_constant: 3950
       reference_temperature: 25°C
@@ -93,20 +97,30 @@ sensor:
       - sliding_window_moving_average:
           window_size: 5
           send_every: 1
+
+  # 2. PUBLIC SENSOR (Home Assistant Display)
+  # - This creates the entity in Home Assistant.
+  # - Applies the filters to keep the UI clean.
+  - platform: copy
+    source_id: water_temp
+    name: "Water Temperature"
+    filters:
       - delta: 0.5
 
+  # 3. INTERNAL HELPERS
   - platform: resistance
     id: resistance_sensor
+    internal: true
     sensor: source_sensor
     configuration: DOWNSTREAM
     resistor: ${temperature_resistor}
-    internal: true
 
   - platform: adc
     id: source_sensor
+    internal: true
     pin: ${temperature_pin}
     attenuation: 12db
-    update_interval: 0.5s
+    update_interval: 250ms 
     filters:
       - sliding_window_moving_average:
           window_size: 10
