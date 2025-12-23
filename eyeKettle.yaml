@@ -89,6 +89,11 @@ sensor:
       b_constant: 3950
       reference_temperature: 25°C
       reference_resistance: 50kOhm
+    filters:
+      - sliding_window_moving_average:
+          window_size: 5
+          send_every: 1
+      - delta: 0.5
 
   - platform: resistance
     id: resistance_sensor
@@ -197,7 +202,7 @@ switch:
   # 2. UI SWITCH 
   # ----------------------------------------------------------------
   - platform: template
-    name: "Start Heating"
+    name: "Heating Element"
     id: kettle_active
     icon: "mdi:kettle"
     optimistic: true
