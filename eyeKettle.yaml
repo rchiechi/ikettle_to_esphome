@@ -61,7 +61,7 @@ substitutions:
   button_pin: GPIO5 # 10 kOhm resistor to 3.3V
   heating_pin: GPIO12
   default_target_temp: 85 # The default target temp on startup
-
+  loop_speed_ms: "250" 
 
 # -----------------------------------------------------------------
 # Do not edit below this line
@@ -257,6 +257,8 @@ number:
 # 4. CONTROL LOOP (The Brains)
 # ----------------------------------------------------------------
 interval:
-  - interval: 1s
+  # Append 'ms' for the scheduler
+  - interval: ${loop_speed_ms}ms
     then:
-      - lambda: 'kettle_logic.loop();'
+      # Pass the raw number to C++ logic
+      - lambda: 'kettle_logic.loop(${loop_speed_ms});'
