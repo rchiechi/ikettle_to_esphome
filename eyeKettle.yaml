@@ -50,6 +50,14 @@ ota:
     id: ota_esphome
 
 logger:
+  level: DEBUG
+  logs:
+    # Silence the chatty components
+    sensor: INFO
+    resistance: INFO
+    ntc: INFO
+    # Keep custom lambda logging at DEBUG
+    component: DEBUG
 
 # -----------------------------------------------------------------
 # Configuration variables
@@ -61,7 +69,8 @@ substitutions:
   button_pin: GPIO5 # 10 kOhm resistor to 3.3V
   heating_pin: GPIO12
   default_target_temp: 85 # The default target temp on startup
-  loop_speed_ms: "250" 
+  default_keep_warm: 5 # The default keep warm minutes on startup
+  loop_speed_ms: "250"
 
 # -----------------------------------------------------------------
 # Do not edit below this line
@@ -81,7 +90,7 @@ text_sensor:
 # SENSORS (ADC & NTC)
 # ----------------------------------------------------------------
 sensor:
-  # 1. RAW SENSOR (Physics Engine Input)
+  # RAW SENSOR (Physics Engine Input)
   # - Must have ID 'water_temp' because C++ uses it.
   # - Must be INTERNAL to avoid spamming HA database.
   # - Must NOT have 'delta' filter, or rate calculation breaks.
@@ -98,7 +107,7 @@ sensor:
           window_size: 5
           send_every: 1
 
-  # 2. PUBLIC SENSOR (Home Assistant Display)
+  # PUBLIC SENSOR (Home Assistant Display)
   # - This creates the entity in Home Assistant.
   # - Applies the filters to keep the UI clean.
   - platform: copy
@@ -234,7 +243,7 @@ script:
   - id: safety_watchdog
     mode: restart
     then:
-      - delay: 15min
+      - delay: 30min
       
       # Use standard YAML action instead of C++ syntax
       - switch.turn_off: relay_hardware
@@ -269,7 +278,7 @@ number:
     max_value: 30
     step: 1
     restore_value: true
-    initial_value: 0
+    initial_value: ${default_keep_warm}
     optimistic: true
 
 # ----------------------------------------------------------------
