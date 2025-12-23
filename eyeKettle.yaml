@@ -192,7 +192,7 @@ binary_sensor:
     icon: "mdi:kettle-steam"
     
   - platform: template
-    name: "Keep Warm"
+    name: "Keeping Warm"
     id: keeping_warm_status
     icon: "mdi:thermometer-check"
 
