@@ -5,6 +5,7 @@ class KettleLogic {
   private:
     // Internal State
     unsigned long hold_start_time = 0;
+    unsigned long heating_time = 0;
     float last_temp = 0.0;
     
     // Animation Helpers
@@ -15,7 +16,7 @@ class KettleLogic {
     bool has_kettle = false; 
     
     // Constants
-    const float HYST = 2.0;
+    const float HYST = 5.0;
     const float MAX_TEMP = 108.0;
     const float MIN_TEMP = 1.0;
     const float MAX_RATE = 8.0;
@@ -36,7 +37,7 @@ class KettleLogic {
 
     void set_heater(bool on){
       if (on && has_kettle) {
-        id(relay_hardware).turn_on();
+        if !id(relay_hardware).state) id(relay_hardware).turn_on();
       }
       else {
         id(relay_hardware).turn_off();
@@ -134,7 +135,6 @@ class KettleLogic {
             break;
 
           case STATE_DONE:
-            if (id(kettle_active).state) id(kettle_active).turn_off();
             if (id(boiling_status).state) id(boiling_status).publish_state(false);
             if (id(keeping_warm_status).state) id(keeping_warm_status).publish_state(false);
             if (!id(kettle_present).state) id(kettle_present).publish_state(true);
@@ -191,12 +191,11 @@ class KettleLogic {
       last_temp = current;
 
       // 2. DETERMINE STATE
-      int state = STATE_OFF; 
+      int state = LAST_STATE; 
 
       if (current < MIN_TEMP) {
         has_kettle = false; 
         state = STATE_NOKETTLE;
-        set_heater(false); 
       } else {
         has_kettle = true;
       }
@@ -218,14 +217,11 @@ class KettleLogic {
       }
       else if (state != STATE_ERROR) {
         if (hold_start_time == 0) {
-          state = STATE_BOILING;
-          if (current < target && has_kettle) {
-             if (current < (target - HYST) && !id(relay_hardware).state) set_heater(true);
-          } 
-          else if (!has_kettle) {
-            state = STATE_NOKETTLE;
-            set_heater(false);
-          } 
+          if (!has_kettle) state = STATE_NOKETTLE;
+          else if (current < (target - HYST) {
+            state = STATE_BOILING;
+            set_heater(true);
+          }
           else {
              set_heater(false);
              hold_start_time = millis();
@@ -241,12 +237,11 @@ class KettleLogic {
           } 
           else if (has_kettle) {
              state = STATE_WARMING;
-             if (current < (target - HYST) && !id(relay_hardware).state) set_heater(true);
-             else if (current >= target && id(relay_hardware).state) set_heater(false);
+             if (current < (target - HYST)) set_heater(true);
+             else if (current >= target) set_heater(false);
           } 
           else {
              state = STATE_NOKETTLE;
-             set_heater(false);
           }
         }
       }
