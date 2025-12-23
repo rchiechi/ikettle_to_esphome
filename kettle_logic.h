@@ -270,7 +270,20 @@ class KettleLogic {
             hold_start_time = millis();
             state = STATE_DONE;
             set_heater(false);
-          } else undershoot = 0;
+          }
+          // PLATEAU DETECTION (Boil/Stall Safety)
+          // Check for stall if:
+          //   A. We are close to target
+          //   B. The rate is near zero
+          //   C. The heater has been running for > 5 seconds (Grace Period)
+          else if (current > (target - 6.0) 
+                   && current_rate < 0.15 
+                   && (millis() - heating_start_time > 5000)) {             
+             hold_start_time = millis();
+             state = STATE_DONE;
+             set_heater(false);
+          }
+          else undershoot = 0;
         }
         else { // Warming
           unsigned long elapsed = millis() - hold_start_time;
