@@ -108,13 +108,28 @@ sensor:
           send_every: 1
 
   # PUBLIC SENSOR (Home Assistant Display)
-  # - This creates the entity in Home Assistant.
-  # - Applies the filters to keep the UI clean.
+  # Heavy filtering for a "Stable" look. 
+  # Does not affect the C++ calculations.
   - platform: copy
     source_id: water_temp
     name: "Water Temperature"
+    accuracy_decimals: 0 # Display whole numbers (e.g. "42 °C")
     filters:
-      - delta: 0.5
+      # HEAVY SMOOTHING
+      # Slow layer of smoothing just for the display.
+      # Window 15 @ 250ms updates = ~3.75 seconds of averaging.
+      - sliding_window_moving_average:
+          window_size: 15
+          send_every: 1
+
+      # ROUNDING
+      # Force value to nearest integer (41.6 -> 42.0)
+      - round: 0
+
+      # HYSTERESIS / DELTA
+      # Only update HA if the integer value actually changes.
+      # Prevents "42" -> "42" updates.
+      - delta: 1.0
 
   # 3. INTERNAL HELPERS
   - platform: resistance
