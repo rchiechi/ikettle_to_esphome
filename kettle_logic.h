@@ -237,6 +237,7 @@ class KettleLogic {
         state = STATE_NOKETTLE;
       } else {
         has_kettle = true;
+        if (state == STATE_NOKETTLE) state = STATE_OFF;
       }
       
       if (active && current_rate > MAX_RATE) {
