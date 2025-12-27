@@ -2,7 +2,8 @@ esphome:
   name: "eyekettle"
   friendly_name: "eyeKettle S2"
   includes:
-    - kettle_logic.h # Make sure to put this file in the same dir as the yaml
+    - kettle_logic.h
+  
   on_boot:
     # Action 1: High Priority (Runs first)
     - priority: 600
@@ -43,7 +44,7 @@ wifi:
 
 api:
   encryption:
-    key: !secret encryption_key
+    key: ! secret_api_encryption_key
 
 ota:
   - platform: esphome
@@ -52,6 +53,7 @@ ota:
 logger:
   level: DEBUG
   logs:
+    hx711: INFO # Comment for calibration, only uncomment if using HX711
     # Silence the chatty components
     sensor: INFO
     resistance: INFO
@@ -87,10 +89,10 @@ text_sensor:
     update_interval: never
 
 # ----------------------------------------------------------------
-# SENSORS (ADC & NTC)
+# SENSORS
 # ----------------------------------------------------------------
 sensor:
-  # RAW SENSOR (For internal calculations)
+  # RAW TEMP SENSOR (For internal calculations)
   # - Must have ID 'water_temp' because C++ uses it.
   # - Must be INTERNAL to avoid spamming HA database.
   # - Must NOT have 'delta' filter, or rate calculation breaks.
@@ -107,7 +109,7 @@ sensor:
           window_size: 5
           send_every: 1
 
-  # PUBLIC SENSOR (Home Assistant Display)
+  # PUBLIC TEMP SENSOR (Home Assistant Display)
   # Heavy filtering for a "Stable" look. 
   # Does not affect the C++ calculations.
   - platform: copy
@@ -131,7 +133,7 @@ sensor:
       # Prevents "42" -> "42" updates.
       - delta: 1.0
 
-  # 3. INTERNAL HELPERS
+  # INTERNAL HELPERS
   - platform: resistance
     id: resistance_sensor
     internal: true
@@ -149,7 +151,70 @@ sensor:
       - sliding_window_moving_average:
           window_size: 10
           send_every: 2
-          
+
+########################################################################
+#  Comment out the blocks below if you are not using the strain gauge  #
+########################################################################
+  # HX711 Strain Gauge
+  - platform: hx711
+    name: "HX711 Internal"
+    id: strain_sensor
+    internal: true
+    dout_pin:
+      number: 6   # DATA
+      mode: INPUT_PULLUP
+    clk_pin: 9    # CLOCK / SCK
+    gain: 64
+    update_interval: 1s 
+    filters:
+      # CALIBRATION (Based on your averages)
+      # Maps raw weight directly to Percentage (0.0 - 100.0)
+      - calibrate_linear:
+          - -435300 -> 0.0 # Point 1: Empty
+          - -357900 -> 1.0 # Point 2: 1.0 Liter
+          - -295600 -> 1.8 # Point 3: 1.8 Liters (Full)
+
+      # LIGHT SMOOTHING
+      # Just enough to strip electrical noise for the C++ logic
+      - sliding_window_moving_average:
+          window_size: 5
+          send_every: 1      
+    ##################################################
+    # These are my values: yours will be different!  #
+    # No Kettle: -522425 / -520781                   #
+    # Empty Kettle: -434452 / -436118                #
+    # 1 L of water in Kettle: -356995 / -358771      #
+    # Full Kettle: -295012 /  -296228                #
+    ##################################################
+  - platform: copy
+    source_id: strain_sensor
+    name: "Water Level"
+    unit_of_measurement: "%"
+    icon: "mdi:kettle-steam"
+    accuracy_decimals: 0 # Show "50 %", not "50.0 %"
+    filters:
+      # CONVERT LITERS TO PERCENT
+      # Logic: (Liters / 1.8) * 100
+      - lambda: return (x / 1.8) * 100.0;
+
+      # CLAMP floor to 0%
+      - lambda: |-
+          return x < 0 ? 0 : x;
+
+      # HEAVY SMOOTHING FOR STABLE READINGS
+      - sliding_window_moving_average:
+          window_size: 20
+          send_every: 1
+
+      # QUANTIZE to 10%
+      - lambda: return round(x / 10.0) * 10.0;
+      
+      # HYSTERESIS
+      - delta: 5
+########################################################################
+#  End of strain gauge logic                                           #
+########################################################################
+
 
 # ----------------------------------------------------------------
 # HARDWARE: LED & BUTTON

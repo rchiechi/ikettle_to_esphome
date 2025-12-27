@@ -133,6 +133,92 @@ mode: single
 - The rest of the switches and sensors are exposed in HA
 
 
-# Future
+# Strain Gauge
 
-I just got this up and running today and wanted to share the baseline functional result. I have done minimal testing, especially of the safety features (like dry boil detection) so use at your own risk. If I manage to get the strain gauge working, I'll update the config here.
+If you are *not* using the strain gauge you must comment it out of the YAML config. It is clearly indicated. You must also comment out the `hx711: INFO` line in `logger:`
+
+If you want to enable the water level sensor, you need a strain gauge amplifier. I used the [Adafruit HX711 24-bit ADC](https://learn.adafruit.com/adafruit-hx711-24-bit-adc/pinouts). The strain gauge in the kettle is a half-cell, meaning you need to construct a reference cell with two 1 kOhm resistors like this:
+
+```plaintext
+HX711 Board
+      +-----------+
+      |           |
+      |        E+ |<---------+------------ Connect Sensor BLACK Wire
+      |           |          |
+      |           |          |
+      |           |     [ Fixed R1 ]  <--- (Your first dummy resistor)
+      |           |          |
+      |           |          |
+      |        A- |<---------+------------ Connect Junction of R1 & R2
+      |           |          |
+      |           |          |
+      |           |     [ Fixed R2 ]  <--- (Your second dummy resistor)
+      |           |          |
+      |           |          |
+      |        E- |<---------+------------ Connect Sensor WHITE Wire
+      |           |
+      |           |
+      |        A+ |<---------------------- Connect Sensor RED Wire
+      |           |
+      +-----------+
+```
+
+There is enough space in the base that you can tuck all the wires and the two PCBs of the feather and HX711 neatly inside.
+![Bottom of Daughter Board|690x285](images/ikettle_strain_.jpg)
+
+In order to use the strain gauge, it has to be calibrated. There are two places in the YAML you need to find to do this.
+
+1. Find the logger entry. Comment out the line to enable the DEBUG output in the console. Compile and install. Every second it will spam the console with raw readings of a siged 24 bit integer. You need to write down the values when: the kettle is empty; with 1L of water in it; and when full. Give it a bit to settle before writing down the numbers, as the sloshing of water causes them to drift quite a bit. 
+
+```yaml
+logger:
+  level: DEBUG
+  logs:
+    hx711: INFO # Comment for calibration, only uncomment if using HX711
+```
+
+2. Find this block in the YAML and populate it with your numbers for reference 
+
+```plaintext
+    ##################################################
+    # These are my values: yours will be different!  #
+    # No Kettle: -522425 / -520781                   #
+    # Empty Kettle: -434452 / -436118                #
+    # 1 L of water in Kettle: -356995 / -358771      #
+    # Full Kettle: -295012 /  -296228                #
+    ##################################################
+```
+
+3. Find this block in the YAML and enter your numbers:
+
+
+```yaml
+      # CALIBRATION (Based on your averages)
+      # Maps raw weight directly to Percentage (0.0 - 100.0)
+      - calibrate_linear:
+          - -435300 -> 0.0 # Point 1: Empty
+          - -357900 -> 1.0 # Point 2: 1.0 Liter
+          - -295600 -> 1.8 # Point 3: 1.8 Liters (Full)
+```
+
+4. Un-comment the `hx711: INFO` line to supress the raw output
+5. Recompile and install.
+
+# Home Assistant
+
+![Home Assistant Integration|690x285](images/HA_integration.png)
+
+The YAML exposes the following:
+
+- Controls:
+  - switch for the heating element
+  - keep warm timer (0 to disable)
+  - target temperature
+- Sensors:
+  - boiling, binary switch that is on when target temp is reached
+  - keeping warm, binary switch that is on when keeping warm is active
+  - kettle present, binary switch that is on when kettle is on the base
+  - water level, percentage sensor of approximate water level (if using hx711)
+  - water temperature, shows current water temperature if kettle is on base
+- Actions:
+ - esphome.kettle_button_event is fired when the button is pressed
