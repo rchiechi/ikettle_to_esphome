@@ -222,4 +222,4 @@ The YAML exposes the following:
   - water temperature, shows current water temperature if kettle is on base
   - kettle fault state, shows text string of whatever `kettle_logic.h` thinks is happening
 - Actions:
- - esphome.kettle_button_event is fired when the button is pressed
+  - esphome.kettle_button_event is fired when the button is pressed
